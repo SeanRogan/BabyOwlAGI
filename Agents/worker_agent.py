@@ -115,7 +115,9 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
         dependent_tasks_output = ""
         for dependent_task_id in task["dependent_task_ids"]:  # loop through their ids
             # TODO THIS DOESNT WORK
-            dependent_task_output = get_task_by_id(dependent_task_id)["output"]["choices"][0]["message"]["content"]  # find the tasks output and save it
+            dependent_task_output = get_task_by_id(dependent_task_id)["output"]
+            dependent_task_output = dependent_task_output["choices"][0]["message"]["content"]
+            print(dependent_task_output)# find the tasks output and save it
             dependent_task_output = dependent_task_output[0:2000]  # clip it to size
             dependent_tasks_output += f" {dependent_task_output}"  # append the dependency task outputs together
         task_prompt += f" Your dependent tasks output: {dependent_tasks_output}\n OUTPUT:"  # append the outputs to the prompt context
