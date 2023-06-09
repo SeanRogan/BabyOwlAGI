@@ -114,9 +114,8 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
     if task["dependent_task_ids"]:  # if the task has dependent tasks
         dependent_tasks_output = ""
         for dependent_task_id in task["dependent_task_ids"]:  # loop through their ids
-            # TODO THIS DOESNT WORK
             dependent_task_output = get_task_by_id(dependent_task_id)["output"]
-            dependent_task_output = dependent_task_output["choices"][0]["message"]["content"]
+            # dependent_task_output = dependent_task_output["choices"][0]["message"]["content"]
             print(dependent_task_output)# find the tasks output and save it
             dependent_task_output = dependent_task_output[0:2000]  # clip it to size
             dependent_tasks_output += f" {dependent_task_output}"  # append the dependency task outputs together
@@ -142,9 +141,10 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
             stop="###",
             temperature=0.5,
         )
-
+        task_output = task_output["choices"][0]["message"]["content"]
         # text_completion_tool(task_prompt)
     elif task["tool"] == "web-search":
+        # TODO there needs to be a function that uses an llm call to convert the task into a valid search query
         task_output = web_search_tool(str(task['task']))
     # Find task index in the task_list
     task_index = None
@@ -159,7 +159,8 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
     # todo save prompt and output to chroma db
     # Print task output
     print("\033[93m\033[1m" + "\nTask Output:" + "\033[0m\033[0m")
-    print(task_output["choices"][0]["message"]["content"])
+    print(task_output)
+    # print(task_output["choices"][0]["message"]["content"])
 
     # # Add task output to session_summary
     # global session_summary
@@ -170,8 +171,6 @@ def get_task_by_id(id: int) -> Dict:
     for task in task_list:
         if task["id"] == id:
             return task
-        else:
-            return None
 
 
 def add_task(task: Dict):
