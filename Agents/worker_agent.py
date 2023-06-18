@@ -1,30 +1,35 @@
+from collections import deque as deq
 import json
 import logging
-from typing import Dict, List
+from typing import Dict, List, Deque
 import openai
 from serpapi import GoogleSearch
 import Constants.settings as settings
 from Tools.web_search_tool import web_search_tool
+import Util.token_counter as counter
+
 """THIS AGENT IS THE MAIN WORKER OF THE PROGRAM. IT CREATES A TASK LIST BASED ON THE INITIAL USER PROMPT,
  IN AN ATTEMPT TO RESEARCH THE PROBLEM AND RETURN RELEVANT INFORMATION. IT THEN EX"""
 # todo maybe a deque would work better than a list
 OBJECTIVE = None
 task_list = []
+# task_list = deq
 serpapi_key = settings.SERPAPI_KEY
 # Configure OpenAI and SerpAPI client
 openai.api_key = settings.OPEN_AI_API_KEY
 if serpapi_key:
     serpapi_client = GoogleSearch({"api_key": serpapi_key})
-    websearch_var = "[web-search] "
+    websearch_var = "[web-search]"
 else:
     websearch_var = ""
 
+token_count = 0
+
 
 def create_task_list(objective: str) -> List[Dict]:
+    global token_count
     OBJECTIVE = objective
     global task_list
-    condensed_tasks = [{k: v for k, v in task.items() if k != "result"} for task in
-                       task_list]  # this line extracts relevant info from the task list to pass as context
     # set prompt
     prompt = (
         f"You are a task creation AI tasked with creating a list of tasks as a JSON array, considering the ultimate objective of your team: {OBJECTIVE}. "
@@ -44,7 +49,7 @@ def create_task_list(objective: str) -> List[Dict]:
         " \"result\": null,"
         " \"result_summary\": null},"
         " {\"id\": 2,"
-        " \"task\": \"Consider additional insights that can be reasoned from the results of...\","
+        " \"task\": \"Consider additional insights that can be reasoned from the results and of output of the dependent tasks.\","
         " \"tool\": \"text-completion\","
         " \"dependent_task_ids\": [1],"
         " \"status\": \"incomplete\","
@@ -60,7 +65,7 @@ def create_task_list(objective: str) -> List[Dict]:
         f"JSON TASK LIST="
     )
 
-   # log statements
+    # log statements
     print("\033[90m\033[3m" + "\nInitializing...\n" + "\033[0m")
     print("\033[90m\033[3m" + "Analyzing objective...\n" + "\033[0m")
     print("\033[90m\033[3m" + "Running task creation agent...\n" + "\033[0m")
@@ -83,7 +88,7 @@ def create_task_list(objective: str) -> List[Dict]:
         stop="###",
         temperature=0.5,
     )
-
+    token_count += response["usage"]["total_tokens"]
     result = response["choices"][0]["message"]["content"]
     try:
         task_list = json.loads(result)
@@ -93,15 +98,16 @@ def create_task_list(objective: str) -> List[Dict]:
     return task_list
 
 
-def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
+def execute_task(task: Dict, task_list: Deque, obj: str):
+    OBJECTIVE = obj
+    global token_count
     task_output = None
     # Check if dependent_task_ids is not empty
+    # todo this loops over the whole task list to check for incomplete tasks with every iteration, need a more performant way to check that tasks are done
     if task["dependent_task_ids"]:  # if there are any dependencies...
-        all_dependent_tasks_complete = True  # start with all tasks completed
         for dependent_task_id in task["dependent_task_ids"]:  # loop through dependency tasks
             dependent_task = get_task_by_id(dependent_task_id)
             if not dependent_task or dependent_task["status"] != "complete":  # if the task is NOT complete
-                all_dependent_tasks_complete = False  # change the tasks complete flag back to false
                 break
 
     # Execute task
@@ -116,7 +122,7 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
         for dependent_task_id in task["dependent_task_ids"]:  # loop through their ids
             dependent_task_output = get_task_by_id(dependent_task_id)["output"]
             # dependent_task_output = dependent_task_output["choices"][0]["message"]["content"]
-            print(dependent_task_output)# find the tasks output and save it
+            print(dependent_task_output)  # find the tasks output and save it
             dependent_task_output = dependent_task_output[0:2000]  # clip it to size
             dependent_tasks_output += f" {dependent_task_output}"  # append the dependency task outputs together
         task_prompt += f" Your dependent tasks output: {dependent_tasks_output}\n OUTPUT:"  # append the outputs to the prompt context
@@ -127,7 +133,7 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
         task_output = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {   # todo this prompt should be rewritten and benchmarked against the original.
+                {  # todo this prompt should be rewritten and benchmarked against the original.
                     "role": "system",
                     "content": "You are a task creation AI."
                 },
@@ -141,13 +147,14 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
             stop="###",
             temperature=0.5,
         )
+        token_count += task_output["usage"]["total_tokens"]
         task_output = task_output["choices"][0]["message"]["content"]
         # text_completion_tool(task_prompt)
     elif task["tool"] == "web-search":
         # TODO there needs to be a function that uses an llm call to convert the task into a valid search query
         task_output = web_search_tool(str(task['task']))
     # Find task index in the task_list
-    task_index = None
+    # task_index = task_list.index(task["id"])
     for i, t in enumerate(task_list):
         if t["id"] == task["id"]:
             task_index = i
@@ -160,7 +167,6 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
     # Print task output
     print("\033[93m\033[1m" + "\nTask Output:" + "\033[0m\033[0m")
     print(task_output)
-    # print(task_output["choices"][0]["message"]["content"])
 
     # # Add task output to session_summary
     # global session_summary
@@ -168,6 +174,7 @@ def execute_task(task: Dict, task_list: List, OBJECTIVE: str):
 
 
 def get_task_by_id(id: int) -> Dict:
+
     for task in task_list:
         if task["id"] == id:
             return task

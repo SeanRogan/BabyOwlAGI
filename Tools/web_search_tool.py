@@ -111,12 +111,12 @@ def extract_relevant_info(objective, large_string, task):
         ]
         # todo replace with better api call
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo-16k",
             messages=messages,
-            max_tokens=800,
+            max_tokens=8000,
             n=1,
             stop="###",
-            temperature=0.7,
+            temperature=0.5,
         )
 
         notes += response.choices[0].message['content'].strip() + ". "
